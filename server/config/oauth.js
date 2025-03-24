@@ -4,7 +4,7 @@ const User = require("../models/User");
 require("dotenv").config();
 
 passport.use(
-  new GoogleStrategy(
+  new GoogleStrategy( 
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
@@ -23,7 +23,7 @@ passport.use(
           });
           await user.save();
         }
-
+ 
         return done(null, user);
       } catch (err) {
         return done(err, null);

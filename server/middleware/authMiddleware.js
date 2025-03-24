@@ -1,18 +1,37 @@
-exports.protect = (req, res, next) => {
-  const token = req.headers.authorization?.split(" ")[1];
+const User = require("../models/User");
 
-  if (!token) {
-    console.log("No token received");
-    return res.status(401).json({ message: "Unauthorized" });
+exports.protect = async (req, res, next) => {
+  const googleId = req.headers.authorization; // Assuming you send Google ID in the header
+  console.log(googleId)
+  if (!googleId) {
+    console.log("nhi aya h re baba")
+    return res.status(401).json({
+      success: false,
+      message: "Not authorized to access this route",
+    });
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    console.log("Decoded user:", decoded); 
-    req.user = decoded;
+    // Check if user exists with the provided Google ID
+    const user = await User.findOne({ googleId });
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "User  no longer exists",
+      });
+    }
+
+    req.user = {
+      id: user.id, // Use Google ID
+      username: user.name, // Assuming you have a name field
+    };
+
     next();
   } catch (error) {
-    console.error("Token verification failed:", error);
-    res.status(403).json({ message: "Invalid token" });
+    return res.status(401).json({
+      success: false,
+      message: "Not authorized to access this route",
+    });
   }
 };

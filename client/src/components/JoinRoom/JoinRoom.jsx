@@ -21,7 +21,7 @@ export default function JoinRoom() {
   useEffect(() => {
     const fetchRoom = async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/rooms/${roomId}`);
+        const res = await axios.get(`${req.protocol}://${req.get("host")}/api/rooms/${roomId}/join`);
         setRoom(res.data);
       } catch (error) {
         toast.error("⚠️ Room not found");
@@ -29,7 +29,7 @@ export default function JoinRoom() {
     };
 
     fetchRoom();
-  }, [roomId]);
+  }, [roomId]); 
 
   return (
     <Container>

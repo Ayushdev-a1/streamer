@@ -3,6 +3,7 @@ import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
 import { toast } from "react-toastify";
+import { useAuth } from "../../context/AuthContext";
 
 const Container = styled.div`
   display: flex;
@@ -51,64 +52,83 @@ const LinkBox = styled.div`
 
 export default function CreateRoom() {
   const [roomName, setRoomName] = useState("");
-  const [inviteLink, setInviteLink] = useState(null);
-  const [hostName, setHostName] = useState("");
+  const [description, setDescription] = useState("");
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [shareableLink, setShareableLink] = useState(null);
   const navigate = useNavigate();
+  const {user} = useAuth();
+
 
   const handleCreateRoom = async () => {
+    console.log(user?.googleId)
     if (!roomName.trim()) {
+      console.log("Room name cannot be empty")
       toast.error("Room name cannot be empty");
       return;
     }
-  
-    const token = localStorage.getItem("token"); // Retrieve token from storage
-  
-    if (!token) {
-      toast.error("Please log in first");
-      return;
-    }
-  
+
+
+    // if (!token) {
+    //   console.log("nhi chl rha h")
+    //   toast.error("Please log in first");
+    //   return;
+    // }
+
     try {
       const res = await axios.post(
-        "http://localhost:5000/rooms/create",
-        { name: roomName },
+        "http://localhost:5000/api/rooms/",
+        { 
+          name: roomName,
+          description: description,
+          isPrivate: isPrivate,
+        },
         {
-          headers: { Authorization: `Bearer ${token}` }, 
+          headers: {Authorization: user?.googleId},
           withCredentials: true,
         }
       );
-  
-      setInviteLink(res.data.room.inviteLink);
-      setHostName(res.data.host);
+      console.log(res)
+      setShareableLink(res.data.data.shareableLink);
       toast.success("🎉 Room Created Successfully!");
       console.log("Navigating to /rooms");
-      navigate("/rooms");
     } catch (error) {
-      toast.error("⚠️ Failed to create room");
       console.error(error);
-    }
+    } 
   };
-  
 
   return (
     <Container>
       <h2>Create a Room</h2>
       <Input
         type="text"
-        id="roomName"  
+        id="roomName"
         name="roomName"
         placeholder="Enter room name"
         value={roomName}
         onChange={(e) => setRoomName(e.target.value)}
+      />
+      <Input
+        type="text"
+        id="description"
+        name="description"
+        placeholder="Enter room description"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+      />
+      <label>
+        <input
+          type="checkbox"
+          checked={isPrivate}
+          onChange={(e) => setIsPrivate(e.target.checked)}
         />
-
+        Private Room
+      </label>
       <Button onClick={handleCreateRoom}>Create Room</Button>
 
-      {inviteLink && (
+      {shareableLink && (
         <>
           <h3>Invite Friends:</h3>
-          <LinkBox>{inviteLink}</LinkBox>
-          <p>Host: {hostName}</p>
+          <LinkBox>{shareableLink}</LinkBox>
         </>
       )}
     </Container>

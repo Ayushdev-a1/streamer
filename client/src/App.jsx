@@ -5,17 +5,18 @@ import Stream from "./pages/Stream";
 import Navbar from "./components/Navbar/Navbar";
 import CreateRoom from "./components/CreateRoom/CreateRoom"
 import JoinRoom from "./components/JoinRoom/JoinRoom"
+import MovieStream from "./components/MovieStream/MovieStream";
 export default function App() {
   return (
     <BrowserRouter>
       <Navbar />
-      <Routes>
+      <Routes> 
         <Route path="/" element={<LandingPage />} />
         <Route path="/landing" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
         <Route path="/stream" element={<Stream />} />
         <Route path="/create-room" element={<CreateRoom />} />
-        <Route path="/join-room/:roomId" element={<JoinRoom />} />
+        <Route path="/room" element={<MovieStream/>} />
 
       </Routes>
     </BrowserRouter>

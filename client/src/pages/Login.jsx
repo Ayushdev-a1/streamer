@@ -1,9 +1,9 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import axios from "axios";
 import styled from "styled-components";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { useAuth } from "../context/AuthContext";
 
 const Container = styled.div`
   display: flex;
@@ -32,31 +32,26 @@ const LoginButton = styled.button`
 
 export default function Login() {
   const navigate = useNavigate();
+  const { isAuthenticated, login } = useAuth();
 
   useEffect(() => {
-    const checkLoginStatus = async () => {
-      try {
-        const res = await axios.get("http://localhost:5000/auth/status", { withCredentials: true });
-        if (res.data.authenticated) {
-          toast.success("✅ Login Successful! Redirecting...", { position: "top-right", autoClose: 2000 });
-          setTimeout(() => navigate("/landing"), 2000); 
-        }
-      } catch (error) {
-        console.error("Authentication check failed", error);
-      }
-    };
-
-    checkLoginStatus();
-  }, [navigate]);
+    if (isAuthenticated) {
+      console.log("aage bdh phle se login h")
+      toast.success("✅ Login Successful! Redirecting...", { position: "top-right", autoClose: 2000 });
+      setTimeout(() => navigate("/landing"), 2000);
+    }
+  }, [isAuthenticated, navigate]);
 
   const handleLogin = () => {
-    window.location.href = "http://localhost:5000/auth/google/callback?scope=profile%20email";
-    
+    console.log("click ho rha h ")
+    window.location.href = "http://localhost:5000/auth/google";
   };
 
   return (
     <Container>
-      <LoginButton onClick={handleLogin}>Login with Google</LoginButton>
+      <LoginButton id="google-login" onClick={handleLogin}>
+        Login with Google 
+      </LoginButton>
     </Container>
   );
 }
