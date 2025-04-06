@@ -61,51 +61,74 @@ export default function CreateRoom() {
   const [roomName, setRoomName] = useState("");
   const [description, setDescription] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
-  const [isHost, setIsHost] = useState(false); // New state for host status
+  const [isHost, setIsHost] = useState(true); // Default to host
   const [shareableLink, setShareableLink] = useState(null);
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { user } = useAuth();
+  
+  const API_BASE_URL = import.meta.env.VITE_API_ADDRESS || "http://localhost:5000";
 
   const handleCreateRoom = async () => {
-    console.log(user?.googleId);
+    if (!user || !user._id) {
+      toast.error("You must be logged in to create a room");
+      return;
+    }
 
     if (!roomName.trim()) {
-      console.log("Room name cannot be empty");
       toast.error("Room name cannot be empty");
       return;
     }
 
+    setLoading(true);
+    
     try {
       const res = await axios.post(
-        "http://localhost:5000/api/rooms/",
+        `${API_BASE_URL}/api/rooms`,
         {
           name: roomName,
           description: description,
           isPrivate: isPrivate,
-          isHost: isHost, // Include isHost in the request
+          settings: {
+            allowChat: true,
+            allowMediaControl: true,
+            allowVideoChat: true
+          }
         },
         {
-          headers: { Authorization: user?.googleId },
+          headers: { 
+            // Send authorization as both GoogleID and in Bearer format to support both methods
+            Authorization: user.googleId || user._id, 
+          },
           withCredentials: true,
         }
       );
 
-      console.log(res); 
+      console.log("Room created:", res.data);
 
-      // Extract room ID directly from the response
-      const fullLink = res.data.data.shareableLink;
-      const roomPath = fullLink.replace("http://localhost:5000/api/rooms/", "");
-      const roomId = roomPath.split("/")[0];
-
-      setShareableLink(fullLink);
-      // Pass isHost via navigation state
-      navigate(`/room?roomId=${roomId}`, { state: { isHost } });
-
+      // Get roomId from response
+      const roomId = res.data.roomId;
+      
+      // Create shareable link
+      const shareableLink = `${window.location.origin}/join-room?roomId=${roomId}`;
+      setShareableLink(shareableLink);
+      
       toast.success("🎉 Room Created Successfully!");
-      console.log("Navigating to /room?roomId=" + roomId + " with isHost=" + isHost);
+      
+      // Wait a moment before navigating
+      setTimeout(() => {
+        navigate(`/room?roomId=${roomId}`, { 
+          state: { 
+            isHost: true,
+            link: shareableLink
+          } 
+        });
+      }, 1500);
     } catch (error) {
-      console.error(error);
-      toast.error("Failed to create room!");
+      console.error("Error creating room:", error);
+      toast.error(error.response?.data?.message || "Failed to create room");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -136,29 +159,26 @@ export default function CreateRoom() {
         />
         Private Room
       </CheckboxLabel>
-      <CheckboxLabel>
-        <input
-          type="checkbox"
-          checked={isHost}
-          onChange={(e) => setIsHost(e.target.checked)}
-        />
-        I’m the host
-      </CheckboxLabel>
-      <Button onClick={handleCreateRoom}>Create Room</Button>
+      
+      <Button 
+        onClick={handleCreateRoom} 
+        disabled={loading || !roomName.trim()}
+      >
+        {loading ? "Creating..." : "Create Room"}
+      </Button>
 
       {shareableLink && (
         <>
           <h3>Invite Friends:</h3>
+          <LinkBox>{shareableLink}</LinkBox>
           <Button
             onClick={() => {
-              const roomPath = shareableLink.replace("http://localhost:5000/api/rooms/", "");
-              const roomId = roomPath.split("/")[0];
-              navigate(`/room?roomId=${roomId}`, { state: { isHost } });
+              navigator.clipboard.writeText(shareableLink);
+              toast.success("Link copied to clipboard!");
             }}
           >
-            Join Room
+            Copy Link
           </Button>
-          <LinkBox>{shareableLink}</LinkBox>
         </>
       )}
     </Container>

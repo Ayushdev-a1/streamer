@@ -6,6 +6,7 @@ import { useAuth } from "../../context/AuthContext"
 import { useNavigate, useLocation } from "react-router-dom"
 import toast from "react-hot-toast"
 import UploadProgress from "./UploadProgress"
+import userService from "../../services/userService"
 
 const MovieStream = () => {
   const [roomId, setRoomId] = useState("")
@@ -38,6 +39,7 @@ const MovieStream = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const linkRef = useRef(null);
+  const [isFavorite, setIsFavorite] = useState(false);
 
   const API_BASE_URL = import.meta.env.VITE_API_ADDRESS;
   
@@ -96,16 +98,23 @@ const MovieStream = () => {
     setIsHost(hostFromState)
 
     if (!socketRef.current && user?.googleId && user?.name) {
-      // Initialize socket connection
-      socketRef.current = io(`${API_BASE_URL}`, {
-        transports: ["websocket"],
+      // Initialize socket connection with better URL handling
+      const socketUrl = API_BASE_URL || 'http://localhost:5000';
+      
+      console.log(`Connecting to socket server at: ${socketUrl}`);
+      
+      socketRef.current = io(socketUrl, {
+        transports: ["websocket", "polling"], // Try websocket first, fallback to polling
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
+        timeout: 10000, // 10 seconds connection timeout
         auth: { googleId: user.googleId, username: user.name, userId: user._id },
+        withCredentials: true,
       })
 
+      // Add improved connection logging and error handling
       socketRef.current.on("connect", () => {
-        console.log("Connected to WebSocket")
+        console.log("Connected to WebSocket server successfully");
         setConnectionStatus("Connected to server")
         socketRef.current.emit("join-room", room, hostFromState)
 
@@ -127,9 +136,10 @@ const MovieStream = () => {
       })
 
       socketRef.current.on("connect_error", (err) => {
-        console.error("Socket connection error:", err)
-        setConnectionStatus("Connection error")
-        setIsLoading(false)
+        console.error("Socket connection error:", err.message, err);
+        setConnectionStatus(`Connection error: ${err.message}`);
+        toast.error(`Connection error: ${err.message}`);
+        setIsLoading(false);
       })
 
       socketRef.current.on("reconnect", (attempt) => {
@@ -488,102 +498,116 @@ const MovieStream = () => {
   }
 
   const uploadVideo = () => {
-    if (!isHost) return
+    if (!isHost) return;
 
-    const fileInput = document.getElementById("videoUpload")
-    const file = fileInput.files[0]
+    const fileInput = document.getElementById("videoUpload");
+    const file = fileInput.files[0];
 
     if (!file) {
-      console.error("No file selected for upload")
-      toast.error("Please select a video file!")
-      return
+      console.error("No file selected for upload");
+      toast.error("Please select a video file!");
+      return;
     }
 
     // Check file size
     if (file.size > 200 * 1024 * 1024) {
       // 200MB
-      toast.error("File is too large. Maximum size is 200MB.")
-      return
+      toast.error("File is too large. Maximum size is 200MB.");
+      return;
     }
 
     // Check file type
-    if (!file.type.startsWith("video/")) {
-      toast.error("Only video files are allowed!")
-      return
+    if (!file.mimetype?.startsWith("video/") && !file.type?.startsWith("video/")) {
+      toast.error("Only video files are allowed!");
+      return;
     }
 
-    const formData = new FormData()
-    formData.append("video", file)
+    const formData = new FormData();
+    formData.append("video", file);
 
-    setIsLoading(true)
-    setUploadProgress(0)
-    console.log("Uploading video:", file.name, "Size:", (file.size / (1024 * 1024)).toFixed(2) + "MB")
+    setIsLoading(true);
+    setUploadProgress(0);
+    console.log("Uploading video:", file.name, "Size:", (file.size / (1024 * 1024)).toFixed(2) + "MB");
 
     // Use XMLHttpRequest for better upload progress tracking
-    const xhr = new XMLHttpRequest()
+    const xhr = new XMLHttpRequest();
+    
+    // Ensure we're using the correct API URL
+    const uploadUrl = `${API_BASE_URL}/upload-video`;
+    console.log(`Uploading to: ${uploadUrl}`);
 
     xhr.upload.addEventListener("progress", (event) => {
       if (event.lengthComputable) {
-        const percentComplete = Math.round((event.loaded / event.total) * 100)
-        console.log(`Upload progress: ${percentComplete}%`)
-        setUploadProgress(percentComplete)
+        const percentComplete = Math.round((event.loaded / event.total) * 100);
+        console.log(`Upload progress: ${percentComplete}%`);
+        setUploadProgress(percentComplete);
       }
-    })
+    });
 
     xhr.addEventListener("load", () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
-          const data = JSON.parse(xhr.responseText)
-          console.log("Video uploaded successfully:", data)
+          const data = JSON.parse(xhr.responseText);
+          console.log("Video uploaded successfully:", data);
 
-          const newSource = `${API_BASE_URL}${data.path}`
-          socketRef.current.emit("change-video-source", { roomId, source: data.path })
-          setVideoSource(newSource)
-          loadAndPlayVideo(newSource)
+          const newSource = `${API_BASE_URL}${data.path}`;
+          socketRef.current.emit("change-video-source", { roomId, source: data.path });
+          setVideoSource(newSource);
+          loadAndPlayVideo(newSource);
 
-          toast.success("Video uploaded successfully!")
-          setUploadProgress(0)
-          setIsLoading(false)
+          toast.success("Video uploaded successfully!");
+          setUploadProgress(0);
+          setIsLoading(false);
         } catch (error) {
-          console.error("Error parsing response:", error)
-          toast.error("Error processing server response")
-          setUploadProgress(0)
-          setIsLoading(false)
+          console.error("Error parsing response:", error);
+          toast.error("Error processing server response");
+          setUploadProgress(0);
+          setIsLoading(false);
         }
       } else {
-        console.error("Upload failed with status:", xhr.status)
-        toast.error(`Upload failed: ${xhr.statusText}`)
-        setUploadProgress(0)
-        setIsLoading(false)
+        console.error("Upload failed with status:", xhr.status, xhr.statusText);
+        toast.error(`Upload failed: ${xhr.statusText || 'Server error'}`);
+        setUploadProgress(0);
+        setIsLoading(false);
       }
-    })
+    });
 
     xhr.addEventListener("error", () => {
-      console.error("Upload failed due to network error")
-      toast.error("Network error during upload. Please try again.")
-      setUploadProgress(0)
-      setIsLoading(false)
-    })
+      console.error("Upload failed due to network error");
+      toast.error("Network error during upload. Please try again.");
+      setUploadProgress(0);
+      setIsLoading(false);
+    });
 
     xhr.addEventListener("abort", () => {
-      console.log("Upload aborted")
-      toast.info("Upload cancelled")
-      setUploadProgress(0)
-      setIsLoading(false)
-    })
+      console.log("Upload aborted");
+      toast.info("Upload cancelled");
+      setUploadProgress(0);
+      setIsLoading(false);
+    });
 
     xhr.addEventListener("timeout", () => {
-      console.error("Upload timed out")
-      toast.error("Upload timed out. Please try again with a smaller file.")
-      setUploadProgress(0)
-      setIsLoading(false)
-    })
+      console.error("Upload timed out");
+      toast.error("Upload timed out. Please try again with a smaller file.");
+      setUploadProgress(0);
+      setIsLoading(false);
+    });
 
     // Set a longer timeout for large files
-    xhr.timeout = 300000 // 5 minutes
+    xhr.timeout = 300000; // 5 minutes
+    xhr.withCredentials = true; // Important for cross-origin requests
 
-    xhr.open("POST", `${API_BASE_URL}/upload-video`, true)
-    xhr.send(formData)
+    xhr.open("POST", uploadUrl, true);
+    
+    // Add auth headers if available
+    const token = localStorage.getItem('token');
+    if (token) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    } else if (user?.googleId) {
+      xhr.setRequestHeader('Authorization', user.googleId);
+    }
+    
+    xhr.send(formData);
   }
 
   const toggleCamera = async () => {
@@ -969,6 +993,78 @@ const MovieStream = () => {
     setShowChat(!showChat)
   }
 
+  // Check if current movie is in favorites
+  useEffect(() => {
+    const checkIfFavorite = async () => {
+      if (!user || !videoSource) return;
+      
+      try {
+        const favorites = await userService.getFavorites(user); // Pass the user object
+        const isInFavorites = favorites.some(fav => fav.path === videoSource);
+        setIsFavorite(isInFavorites);
+      } catch (error) {
+        console.error("Error checking favorites:", error);
+      }
+    };
+    
+    checkIfFavorite();
+  }, [user, videoSource]);
+
+  // Add current movie to favorites
+  const addToFavorites = async () => {
+    if (!user || !videoSource) return;
+    
+    try {
+      // Extract filename from path for title
+      const pathParts = videoSource.split('/');
+      const fileName = pathParts[pathParts.length - 1];
+      const title = fileName.split('.')[0]; // Remove extension
+      
+      await userService.addToFavorites({
+        title: location.state?.movieTitle || title,
+        path: videoSource,
+        thumbnailUrl: ''  // Could capture a frame from video as thumbnail in the future
+      }, user); // Pass the user object
+      
+      setIsFavorite(true);
+      toast.success('Added to favorites!');
+    } catch (error) {
+      console.error("Error adding to favorites:", error);
+      toast.error('Failed to add to favorites');
+    }
+  };
+
+  // Track watched movie in history
+  const saveToWatchHistory = async () => {
+    if (!user || !videoSource) return;
+    
+    try {
+      // Extract filename from path for title
+      const pathParts = videoSource.split('/');
+      const fileName = pathParts[pathParts.length - 1];
+      const title = location.state?.movieTitle || fileName.split('.')[0];
+      
+      await userService.addToWatchHistory({
+        roomId: roomId,
+        movieTitle: title,
+        moviePath: videoSource,
+        duration: videoRef.current?.duration || 0,
+        watchedDuration: videoRef.current?.currentTime || 0
+      }, user); // Pass the user object
+    } catch (error) {
+      console.error("Error adding to watch history:", error);
+    }
+  };
+
+  // Save watch history when leaving
+  useEffect(() => {
+    return () => {
+      if (videoRef.current) {
+        saveToWatchHistory();
+      }
+    };
+  }, []);
+
   return (
     <div className="h-screen w-full bg-black text-white flex flex-col">
       {/* Header */}
@@ -1151,6 +1247,14 @@ const MovieStream = () => {
                     ⏹
                   </button>
                 )}
+                <button
+                  className={`favorite-button ${isFavorite ? 'is-favorite' : ''}`}
+                  onClick={isFavorite ? null : addToFavorites}
+                  disabled={isFavorite}
+                  title={isFavorite ? 'Already in favorites' : 'Add to favorites'}
+                >
+                  {isFavorite ? '★ Favorited' : '☆ Add to Favorites'}
+                </button>
               </div>
             )}
 

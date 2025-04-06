@@ -1,0 +1,16 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Redirect all routes to index.html for client-side routing
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Environment variables
+[context.production.environment]
+  VITE_API_ADDRESS = "https://mv-live-backend.vercel.app"
+
+[context.deploy-preview.environment]
+  VITE_API_ADDRESS = "https://mv-live-backend.vercel.app" 

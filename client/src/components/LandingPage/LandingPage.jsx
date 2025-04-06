@@ -18,99 +18,124 @@ export default function LandingPage() {
   const [showModal, setShowModal] = useState(false);
   const [createRoom, setcreateRoom] = useState(false);
   const [joinLink, setJoinLink] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { user } = useAuth();
   const [roomName, setRoomName] = useState("");
   const [description, setDescription] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
-  const [isHost, setIsHost] = useState(false);
+  const [isHost, setIsHost] = useState(true);
   const [shareableLink, setShareableLink] = useState(null);
 
-  const API_BASE_URL = import.meta.env.VITE_API_ADDRESS;
+  const API_BASE_URL = import.meta.env.VITE_API_ADDRESS || "http://localhost:5000";
 
   const handleCreateRoom = async () => {
-    console.log(user?.googleId);
+    if (!user || !user.googleId) {
+      toast.error("You must be logged in to create a room");
+      return;
+    }
 
     if (!roomName.trim()) {
-      console.log("Room name cannot be empty");
       toast.error("Room name cannot be empty");
       return;
     }
 
+    setLoading(true);
+
     try {
       const res = await axios.post(
-        `${API_BASE_URL}/api/rooms/`,
+        `${API_BASE_URL}/api/rooms`,
         {
           name: roomName,
           description: description,
           isPrivate: isPrivate,
-          isHost: isHost,
+          settings: {
+            allowChat: true,
+            allowMediaControl: true,
+            allowVideoChat: true
+          }
         },
         {
-          headers: { Authorization: user?.googleId },
+          headers: { Authorization: user.googleId },
           withCredentials: true,
         }
       );
 
-      console.log(res);
-      const link = res.data.data.shareableLink
-      console.log(link)
+      console.log("Room created:", res.data);
 
-      // Extract room ID directly from the response
-      const fullLink = res.data.data.shareableLink;
-      const roomPath = fullLink.replace(`${API_BASE_URL}/api/rooms/`, "");
-      const roomId = roomPath.split("/")[0];
-
-      setShareableLink(fullLink);
-      navigate(`/room?roomId=${roomId}`, { state: { isHost, link } });
-
+      const roomId = res.data.roomId;
+      
+      const generatedLink = `${window.location.origin}/join-room?roomId=${roomId}`;
+      setShareableLink(generatedLink);
+      
       toast.success("🎉 Room Created Successfully!");
-      console.log("Navigating to /room?roomId=" + roomId + " with isHost=" + isHost);
+
+      navigate(`/room?roomId=${roomId}`, { 
+        state: { 
+          isHost: true,
+          link: generatedLink
+        } 
+      });
+      
+      setcreateRoom(false);
     } catch (error) {
-      console.error(error);
-      toast.error("Failed to create room!");
+      console.error("Error creating room:", error);
+      toast.error(error.response?.data?.message || "Failed to create room");
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleJoinRoom = () => {
     setShowModal(true);
   };
+  
   const OpenCreateRoom = () => {
     setcreateRoom(true);
   };
+  
   const CloseCreateRoom = () => {
     setcreateRoom(false);
-  }
+  };
+  
   const handleCloseModal = () => {
     setShowModal(false);
     setJoinLink("");
   };
 
   const handleSubmit = async () => {
-    if (joinLink.trim()) {
-      const urlParts = joinLink.split("/");
-      const roomId = urlParts[urlParts.length - 2];
-      console.log(user?.googleId);
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/rooms/${roomId}/join`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `${user?.googleId}`,
-          },
-        });
-
-        const data = await response.json();
-
-        if (response.ok) {
-          console.log("Joined room successfully:", data);
-          navigate(`/room?roomId=${roomId}`);
-        } else {
-          console.error("Failed to join room:", data.message);
-        }
-      } catch (error) {
-        console.error("Error joining room:", error);
+    if (!joinLink.trim()) {
+      toast.error("Please enter a room link");
+      return;
+    }
+    
+    setLoading(true);
+    
+    try {
+      let roomId;
+      
+      if (joinLink.includes('?roomId=')) {
+        roomId = new URLSearchParams(joinLink.split('?')[1]).get('roomId');
+      } else if (joinLink.includes('/join-room/')) {
+        const urlParts = joinLink.split('/');
+        roomId = urlParts[urlParts.length - 1];
+      } else {
+        roomId = joinLink.trim();
       }
+      
+      if (!roomId) {
+        toast.error("Invalid room link format");
+        return;
+      }
+      
+      navigate(`/room?roomId=${roomId}`);
+      
+      handleCloseModal();
+    } catch (error) {
+      console.error("Error joining room:", error);
+      toast.error("Failed to join room");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -168,24 +193,18 @@ export default function LandingPage() {
                 />
                 Private Room
               </CheckboxLabel>
-              <CheckboxLabel>
-                <input
-                  type="checkbox"
-                  checked={isHost}
-                  onChange={(e) => setIsHost(e.target.checked)}
-                />
-                I’m the host
-              </CheckboxLabel>
             </div>
             <div className="flex justify-center gap-4">
               <motion.button
                 onClick={handleCreateRoom}
-                className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg transition-all duration-200"
+                disabled={loading || !roomName.trim()}
+                className={`px-6 py-2 ${loading ? 'bg-gray-500' : 'bg-red-500 hover:bg-red-600'} text-white font-semibold rounded-lg transition-all duration-200`}
               >
-                Create Room
+                {loading ? "Creating..." : "Create Room"}
               </motion.button>
               <motion.button
                 onClick={CloseCreateRoom}
+                disabled={loading}
                 className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg transition-all duration-200"
               >
                 Close
@@ -198,10 +217,10 @@ export default function LandingPage() {
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 p-6 rounded-xl w-full max-w-md shadow-2xl">
             <h2 className="text-2xl font-semibold text-white mb-4">Join a Room</h2>
-            <p className="text-gray-300 mb-6">Please paste the room link below</p>
+            <p className="text-gray-300 mb-6">Please paste the room link or ID below</p>
             <input
               type="text"
-              placeholder="Paste your room link here..."
+              placeholder="Paste your room link or ID here..."
               value={joinLink}
               onChange={(e) => setJoinLink(e.target.value)}
               className="w-full p-3 bg-gray-700 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 mb-6"
@@ -209,12 +228,14 @@ export default function LandingPage() {
             <div className="flex justify-center gap-4">
               <motion.button
                 onClick={handleSubmit}
-                className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg transition-all duration-200"
+                disabled={loading || !joinLink.trim()}
+                className={`px-6 py-2 ${loading ? 'bg-gray-500' : 'bg-red-500 hover:bg-red-600'} text-white font-semibold rounded-lg transition-all duration-200`}
               >
-                Join
+                {loading ? "Joining..." : "Join"}
               </motion.button>
               <motion.button
                 onClick={handleCloseModal}
+                disabled={loading}
                 className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg transition-all duration-200"
               >
                 Cancel

@@ -66,7 +66,7 @@ const Dropdown = styled.div`
   border-radius: 8px;
   box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.2);
   padding: 10px;
-  min-width: 150px;
+  min-width: 180px;
   display: ${({ show }) => (show ? "block" : "none")};
   animation: ${fadeIn} 0.3s ease-in-out;
   z-index: 100;
@@ -75,18 +75,37 @@ const Dropdown = styled.div`
     color: white;
     font-size: 0.9rem;
     margin-bottom: 8px;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   }
 
-  button {
+  a, button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 8px 10px;
+    margin: 5px 0;
+    border-radius: 5px;
+    transition: background-color 0.2s;
+  }
+
+  a:hover, button:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .dropdown-divider {
+    height: 1px;
+    background-color: rgba(255, 255, 255, 0.1);
+    margin: 8px 0;
+  }
+
+  .logout-button {
     background: #f05454;
     color: white;
-    padding: 5px 10px;
-    border-radius: 5px;
-    width: 100%;
-    font-size: 0.9rem;
+    text-align: center;
   }
 
-  button:hover {
+  .logout-button:hover {
     background: #d94343;
   }
 `;
@@ -133,6 +152,12 @@ export default function Navbar() {
     };
   }, [isOpen]);
 
+  // Navigate and close dropdown
+  const navigateAndClose = (path) => {
+    navigate(path);
+    setIsOpen(false);
+  };
+
   return (
     <Nav>
       <Logo>MVLive</Logo>
@@ -147,7 +172,17 @@ export default function Navbar() {
             {/* Dropdown Menu */}
             <Dropdown ref={dropdownRef} show={isOpen}>
               <p>{user?.name || "User"}</p>
-              <button onClick={logout}>Logout</button>
+              <Link onClick={() => navigateAndClose('/profile')}>
+                My Profile
+              </Link>
+              <Link onClick={() => navigateAndClose('/create-room')}>
+                Create Room
+              </Link>
+              <Link onClick={() => navigateAndClose('/join-room')}>
+                Join Room
+              </Link>
+              <div className="dropdown-divider"></div>
+              <button className="logout-button" onClick={logout}>Logout</button>
             </Dropdown>
           </>
         ) : (
