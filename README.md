@@ -120,6 +120,4 @@ MV-Live is a collaborative movie watching platform that allows users to create r
 - Cross-origin requests require proper CORS configuration
 - Cookies use SameSite=None and Secure attributes for cross-domain authentication
 
-## Contributors
 
-- [Ayushdev-a1](https://github.com/Ayushdev-a1) 
