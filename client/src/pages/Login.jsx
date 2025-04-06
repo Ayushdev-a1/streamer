@@ -33,6 +33,7 @@ const LoginButton = styled.button`
 export default function Login() {
   const navigate = useNavigate();
   const { isAuthenticated, login } = useAuth();
+  const API_BASE_URL = import.meta.env.VITE_API_ADDRESS;
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -44,7 +45,7 @@ export default function Login() {
 
   const handleLogin = () => {
     console.log("click ho rha h ")
-    window.location.href = "http://localhost:5000/auth/google";
+    window.location.href = `${API_BASE_URL}/auth/google`;
   };
 
   return (

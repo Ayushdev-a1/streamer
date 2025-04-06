@@ -1,96 +1,86 @@
-import { Link } from "react-router-dom";
-import styled from "styled-components";
+import { Link, useAsyncError } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useState } from "react";
+import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import styled from "styled-components";
+import { toast } from "react-toastify";
 
-const Container = styled.div`
+const CheckboxLabel = styled.label`
+  margin: 10px 0;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
   align-items: center;
-  height: 100vh;
-  background: linear-gradient(45deg, #1a1a1a, #000);
-  color: white;
-`;
-
-const Title = styled(motion.h1)`
-  font-size: 3rem;
-  color: #f05454;
-  margin-bottom: 20px;
-`;
-
-const ButtonContainer = styled.div`
-  display: flex;
-  gap: 20px;
-`;
-
-const Button = styled(motion.button)`
-  padding: 15px 30px;
-  background: #f05454;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  font-size: 1.2rem;
-  cursor: pointer;
-  transition: transform 0.2s, background 0.3s;
-  
-  &:hover {
-    transform: scale(1.1);
-    background: #d43f3f;
-  }
-`;
-
-const Modal = styled.div`
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.7);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 100;
-`;
-
-const ModalContent = styled.div`
-  background: #2a2a2a;
-  padding: 30px;
-  border-radius: 10px;
-  width: 90%;
-  max-width: 500px;
-  text-align: center;
-`;
-
-const InputField = styled.input`
-  width: 100%;
-  padding: 12px;
-  margin: 15px 0;
-  border-radius: 5px;
-  border: 1px solid #444;
-  background: #333;
-  color: white;
-  font-size: 1rem;
-`;
-
-const ModalButton = styled(Button)`
-  margin: 5px;
-  padding: 10px 20px;
+  gap: 5px;
 `;
 
 export default function LandingPage() {
   const [showModal, setShowModal] = useState(false);
+  const [createRoom, setcreateRoom] = useState(false);
   const [joinLink, setJoinLink] = useState("");
   const navigate = useNavigate();
-  
   const { user } = useAuth();
+  const [roomName, setRoomName] = useState("");
+  const [description, setDescription] = useState("");
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [isHost, setIsHost] = useState(false);
+  const [shareableLink, setShareableLink] = useState(null);
+
+  const API_BASE_URL = import.meta.env.VITE_API_ADDRESS;
+
+  const handleCreateRoom = async () => {
+    console.log(user?.googleId);
+
+    if (!roomName.trim()) {
+      console.log("Room name cannot be empty");
+      toast.error("Room name cannot be empty");
+      return;
+    }
+
+    try {
+      const res = await axios.post(
+        `${API_BASE_URL}/api/rooms/`,
+        {
+          name: roomName,
+          description: description,
+          isPrivate: isPrivate,
+          isHost: isHost,
+        },
+        {
+          headers: { Authorization: user?.googleId },
+          withCredentials: true,
+        }
+      );
+
+      console.log(res);
+      const link = res.data.data.shareableLink
+      console.log(link)
+
+      // Extract room ID directly from the response
+      const fullLink = res.data.data.shareableLink;
+      const roomPath = fullLink.replace(`${API_BASE_URL}/api/rooms/`, "");
+      const roomId = roomPath.split("/")[0];
+
+      setShareableLink(fullLink);
+      navigate(`/room?roomId=${roomId}`, { state: { isHost, link } });
+
+      toast.success("🎉 Room Created Successfully!");
+      console.log("Navigating to /room?roomId=" + roomId + " with isHost=" + isHost);
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to create room!");
+    }
+  };
 
   const handleJoinRoom = () => {
     setShowModal(true);
   };
-
+  const OpenCreateRoom = () => {
+    setcreateRoom(true);
+  };
+  const CloseCreateRoom = () => {
+    setcreateRoom(false);
+  }
   const handleCloseModal = () => {
     setShowModal(false);
     setJoinLink("");
@@ -98,24 +88,23 @@ export default function LandingPage() {
 
   const handleSubmit = async () => {
     if (joinLink.trim()) {
-      // Extract room ID from the link
       const urlParts = joinLink.split("/");
-      const roomId = urlParts[urlParts.length - 2]; // Assuming the roomId is the second last part of the URL
-      console.log(user?.googleId)
+      const roomId = urlParts[urlParts.length - 2];
+      console.log(user?.googleId);
       try {
-        const response = await fetch(`http://localhost:5000/api/rooms/${roomId}/join`, {
+        const response = await fetch(`${API_BASE_URL}/api/rooms/${roomId}/join`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `${user?.googleId}`, // Include the Google ID in the Authorization header
+            Authorization: `${user?.googleId}`,
           },
         });
 
-        const data = await response.json(); 
+        const data = await response.json();
 
         if (response.ok) {
-           console.log("Joined room successfully:", data);
-           navigate(`/room?roomId=${roomId}`)
+          console.log("Joined room successfully:", data);
+          navigate(`/room?roomId=${roomId}`);
         } else {
           console.error("Failed to join room:", data.message);
         }
@@ -126,41 +115,114 @@ export default function LandingPage() {
   };
 
   return (
-    <Container>
-      <Title 
-        initial={{ opacity: 0 }} 
-        animate={{ opacity: 1 }} 
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-gray-900 via-black to-gray-950 text-white p-4">
+      <motion.h1
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
         transition={{ duration: 1 }}
+        className="text-4xl md:text-5xl lg:text-6xl font-bold text-red-500 mb-10 tracking-tight"
       >
         Welcome to MVLive
-      </Title>
-      <ButtonContainer>
-        <Link to="/create-room">
-          <Button whileHover={{ scale: 1.1 }}>Create a Room</Button>
-        </Link>
-        <Button whileHover={{ scale: 1.1 }} onClick={handleJoinRoom}>
+      </motion.h1>
+
+      <div className="flex flex-col sm:flex-row gap-6">
+        <motion.button
+          onClick={OpenCreateRoom}
+          whileHover={{ scale: 1.05 }}
+          className="px-8 py-4 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg shadow-lg transition-all duration-200 ease-in-out"
+        >
+          Create a Room
+        </motion.button>
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          onClick={handleJoinRoom}
+          className="px-8 py-4 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg shadow-lg transition-all duration-200 ease-in-out"
+        >
           Join a Room
-        </Button>
-      </ButtonContainer>
-      
+        </motion.button>
+      </div>
+      {createRoom && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 p-6 rounded-xl w-full max-w-md shadow-2xl">
+            <h2 className="text-2xl font-semibold text-white mb-4">Create Room</h2>
+            <input
+              type="text"
+              placeholder="Enter Room Name ..."
+              value={roomName}
+              onChange={(e) => setRoomName(e.target.value)}
+              className="w-full p-3 bg-gray-700 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 mb-6"
+            />
+            <input
+              type="text"
+              placeholder="Room Description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full p-3 bg-gray-700 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 mb-6"
+            />
+            <div className="flex gap-2">
+              <CheckboxLabel>
+                <input
+                  type="checkbox"
+                  checked={isPrivate}
+                  onChange={(e) => setIsPrivate(e.target.checked)}
+                />
+                Private Room
+              </CheckboxLabel>
+              <CheckboxLabel>
+                <input
+                  type="checkbox"
+                  checked={isHost}
+                  onChange={(e) => setIsHost(e.target.checked)}
+                />
+                I’m the host
+              </CheckboxLabel>
+            </div>
+            <div className="flex justify-center gap-4">
+              <motion.button
+                onClick={handleCreateRoom}
+                className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg transition-all duration-200"
+              >
+                Create Room
+              </motion.button>
+              <motion.button
+                onClick={CloseCreateRoom}
+                className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg transition-all duration-200"
+              >
+                Close
+              </motion.button>
+            </div>
+          </div>
+        </div>
+      )}
       {showModal && (
-        <Modal>
-          <ModalContent>
-            <h2>Join a Room</h2>
-            <p>Please paste the room link below</p>
-            <InputField
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 p-6 rounded-xl w-full max-w-md shadow-2xl">
+            <h2 className="text-2xl font-semibold text-white mb-4">Join a Room</h2>
+            <p className="text-gray-300 mb-6">Please paste the room link below</p>
+            <input
               type="text"
               placeholder="Paste your room link here..."
               value={joinLink}
               onChange={(e) => setJoinLink(e.target.value)}
+              className="w-full p-3 bg-gray-700 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 mb-6"
             />
-            <div>
-              <ModalButton onClick={handleSubmit}>Join</ModalButton>
-              <ModalButton onClick={handleCloseModal}>Cancel</ModalButton>
+            <div className="flex justify-center gap-4">
+              <motion.button
+                onClick={handleSubmit}
+                className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg transition-all duration-200"
+              >
+                Join
+              </motion.button>
+              <motion.button
+                onClick={handleCloseModal}
+                className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg transition-all duration-200"
+              >
+                Cancel
+              </motion.button>
             </div>
-          </ModalContent>
-        </Modal>
+          </div>
+        </div>
       )}
-    </Container>
+    </div>
   );
 }
