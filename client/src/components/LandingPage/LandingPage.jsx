@@ -1,6 +1,6 @@
 import { Link, useAsyncError } from "react-router-dom";
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
@@ -28,6 +28,24 @@ export default function LandingPage() {
   const [shareableLink, setShareableLink] = useState(null);
 
   const API_BASE_URL = import.meta.env.VITE_API_ADDRESS || "http://localhost:5000";
+
+  // useEffect(() => {
+  //   const urlParams = new URLSearchParams(window.location.search);
+  //   const token = urlParams.get('token');
+  //   const googleId = urlParams.get('googleId');
+    
+  //   if (token) {
+  //     localStorage.setItem('token', token);
+  //   }
+  //   if (googleId) {
+  //     localStorage.setItem('googleId', googleId);
+  //   }
+    
+  //   // Clean up URL parameters
+  //   if (googleId) {
+  //     window.history.replaceState({}, document.title, window.location.pathname);
+  //   }
+  // }, []);
 
   const handleCreateRoom = async () => {
     if (!user || !user.googleId) {
