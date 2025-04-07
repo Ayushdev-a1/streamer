@@ -38,9 +38,12 @@ export const makeAuthRequest = async (method, endpoint, data = null, user = null
       withCredentials: true,
       headers: {
         'Accept': 'application/json',
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Origin': window.location.origin
       }
     };
+    
+    console.log(`Making ${method.toUpperCase()} request to ${endpoint} from origin: ${window.location.origin}`);
     
     // If we have data and it's not a GET request
     if (data && method.toLowerCase() !== 'get') {
@@ -64,11 +67,12 @@ export const makeAuthRequest = async (method, endpoint, data = null, user = null
     }
     
     // Set a longer timeout for requests in production
-    config.timeout = 15000; // 15 seconds
+    config.timeout = process.env.NODE_ENV === 'production' ? 15000 : 10000; // 15 seconds in prod, 10 in dev
     
     console.log(`Making ${method.toUpperCase()} request to ${endpoint}`, { 
       withCredentials: config.withCredentials,
-      hasAuth: !!config.headers.Authorization?.length 
+      hasAuth: !!config.headers.Authorization?.length,
+      origin: config.headers.Origin
     });
     
     const response = await axios(config);
@@ -82,6 +86,7 @@ export const makeAuthRequest = async (method, endpoint, data = null, user = null
       // that falls out of the range of 2xx
       console.error('Response status:', error.response.status);
       console.error('Response data:', error.response.data);
+      console.error('Response headers:', error.response.headers);
     } else if (error.request) {
       // The request was made but no response was received
       console.error('No response received from server');

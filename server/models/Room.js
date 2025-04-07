@@ -1,4 +1,4 @@
-const mongoose = require("mongoose")
+const mongoose = require("mongoose");
 
 const RoomSchema = new mongoose.Schema({
   roomId: {
@@ -39,7 +39,7 @@ const RoomSchema = new mongoose.Schema({
     uploadedAt: {
       type: Date,
       default: Date.now,
-    }
+    },
   },
   participants: [
     {
@@ -58,7 +58,7 @@ const RoomSchema = new mongoose.Schema({
     maxParticipants: { type: Number, default: 10 },
     autoPlay: { type: Boolean, default: true },
     roomPassword: { type: String },
-    allowJoinRequests: { type: Boolean, default: true }
+    allowJoinRequests: { type: Boolean, default: true },
   },
   playlist: [
     {
@@ -73,14 +73,14 @@ const RoomSchema = new mongoose.Schema({
       addedAt: {
         type: Date,
         default: Date.now,
-      }
-    }
+      },
+    },
   ],
   messages: [
     {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Message",
-    }
+    },
   ],
   roomHistory: [
     {
@@ -91,9 +91,9 @@ const RoomSchema = new mongoose.Schema({
         {
           type: mongoose.Schema.Types.ObjectId,
           ref: "User",
-        }
-      ]
-    }
+        },
+      ],
+    },
   ],
   createdAt: {
     type: Date,
@@ -103,6 +103,7 @@ const RoomSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  inviteLink: { type: String, unique: true },
 });
 
 module.exports = mongoose.model("Room", RoomSchema);

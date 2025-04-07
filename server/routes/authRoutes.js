@@ -8,6 +8,32 @@ const User = require("../models/User");
 const mongoose = require("mongoose");
 const connectDB = require("../config/db");
 
+// CORS middleware for all auth routes
+router.use((req, res, next) => {
+  const origin = req.headers.origin;
+  const allowedOrigins = ['https://mv-live.netlify.app', 'http://localhost:5173'];
+  
+  // Set CORS headers for all requests
+  if (allowedOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+    console.log(`Setting CORS headers for ${req.method} ${req.path} from origin: ${origin}`);
+  } else if (origin) {
+    console.log(`Rejected CORS for origin: ${origin}`);
+  }
+  
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    res.header("Access-Control-Max-Age", "86400"); // 24 hours
+    return res.status(204).end();
+  }
+  
+  next();
+});
+
 // Helper function to ensure database is connected
 const ensureDbConnected = async () => {
   if (mongoose.connection.readyState !== 1) {
@@ -38,14 +64,6 @@ router.post("/login", async (req, res) => {
   }
 });
 
-router.options("/status", (req, res) => {
-  res.header("Access-Control-Allow-Origin", "https://mv-live.netlify.app");
-  res.header("Access-Control-Allow-Methods", "GET,OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept, Origin");
-  res.header("Access-Control-Allow-Credentials", "true");
-  res.status(204).end();
-});
-
 router.get("/status", async (req, res) => {
   try {
     await ensureDbConnected();
@@ -54,18 +72,52 @@ router.get("/status", async (req, res) => {
     const origin = req.headers.origin;
     const allowedOrigins = ['https://mv-live.netlify.app', 'http://localhost:5173'];
     
+    // Always check origin and set CORS headers
     if (allowedOrigins.includes(origin)) {
       res.header("Access-Control-Allow-Origin", origin);
     }
     res.header("Access-Control-Allow-Credentials", "true");
     res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
     
+    console.log("Auth status check request:", {
+      origin: origin,
+      method: req.method,
+      headers: {
+        authorization: req.headers.authorization ? "Present" : "Missing",
+        cookie: req.headers.cookie ? "Present" : "Missing"
+      },
+      isAuthenticated: req.isAuthenticated && req.isAuthenticated(),
+      hasUser: !!req.user,
+      sessionID: req.sessionID
+    });
+    
     console.log("Auth status check: isAuthenticated=", req.isAuthenticated && req.isAuthenticated(), 
                 "user=", req.user ? req.user._id || req.user.id : "none", 
-                "session=", req.session ? !!req.session.passport : "no session");
+                "session=", req.session ? !!req.session.passport : "no session",
+                "sessionID=", req.sessionID);
+    
+    // Check session data in more detail
+    if (req.session) {
+      console.log("Session exists, contents:", JSON.stringify({
+        cookie: req.session.cookie ? { 
+          maxAge: req.session.cookie.maxAge,
+          expires: req.session.cookie.expires,
+          secure: req.session.cookie.secure,
+          httpOnly: req.session.cookie.httpOnly,
+        } : "no cookie",
+        passport: req.session.passport || "no passport data"
+      }, null, 2));
+    }
     
     // Try session-based authentication first
     if (req.isAuthenticated && req.isAuthenticated() && req.user) {
+      // Log details about the authenticated user
+      console.log("User authenticated via session:", JSON.stringify({
+        id: req.user.id || req.user._id,
+        googleId: req.user.googleId,
+        email: req.user.email
+      }));
+      
       // Ensure we have the full user object
       const userId = req.user._id || req.user.id;
       const googleId = req.user.googleId;
@@ -89,6 +141,8 @@ router.get("/status", async (req, res) => {
             googleId: user.googleId
           }
         });
+      } else {
+        console.log("Session user not found in database");
       }
     }
     
@@ -96,7 +150,10 @@ router.get("/status", async (req, res) => {
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
       try {
         const token = req.headers.authorization.split(' ')[1];
+        console.log("Trying JWT authentication with token:", token.substring(0, 10) + "...");
+        
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        console.log("JWT verified, decoded payload:", JSON.stringify(decoded));
         
         const user = await User.findById(decoded._id || decoded.userId);
         
@@ -112,6 +169,8 @@ router.get("/status", async (req, res) => {
               googleId: user.googleId
             }
           });
+        } else {
+          console.log("JWT user not found in database");
         }
       } catch (tokenError) {
         console.error("Token verification failed:", tokenError.message);
@@ -122,6 +181,8 @@ router.get("/status", async (req, res) => {
     if (req.headers.authorization && !req.headers.authorization.startsWith('Bearer')) {
       try {
         const googleId = req.headers.authorization;
+        console.log("Trying Google ID authentication with ID:", googleId);
+        
         const user = await User.findOne({ googleId });
         
         if (user) {
@@ -136,6 +197,8 @@ router.get("/status", async (req, res) => {
               googleId: user.googleId
             }
           });
+        } else {
+          console.log("Google ID user not found in database");
         }
       } catch (googleIdError) {
         console.error("Google ID lookup failed:", googleIdError.message);
@@ -169,19 +232,17 @@ router.get(
       console.log("Google auth user data:", JSON.stringify(req.user, null, 2));
       
       // Extract profile data safely with fallbacks
-      const googleId = req.user.id || req.user.googleId;
-      const name = req.user.displayName || 'User';
-      const email = req.user.emails && req.user.emails[0] ? req.user.emails[0].value : 
-                   (req.user.email || `${googleId}@placeholder.com`);
-      const profilePic = req.user.photos && req.user.photos[0] ? req.user.photos[0].value : 
-                        (req.user.profilePic || null);
+      const googleId = req.user.googleId || req.user.id;
+      const name = req.user.name || req.user.displayName || 'User';
+      const email = req.user.email || (req.user.emails && req.user.emails[0] ? req.user.emails[0].value : `${googleId}@placeholder.com`);
+      const profilePic = req.user.profilePic || (req.user.photos && req.user.photos[0] ? req.user.photos[0].value : null);
       
       if (!googleId) {
         console.error("Google Auth Error: No Google ID provided");
         return res.redirect(`${process.env.CLIENT_URL}/login`);
       }
 
-      // First check if user exists by googleId
+      // Ensure the user exists in the database
       let existingUser = await User.findOne({ googleId });
 
       // If no user found by googleId, check by email
@@ -239,14 +300,20 @@ router.get(
         { expiresIn: "7d" }
       );
 
-      // Login the user with session
-      req.login(existingUser, (err) => {
+      // Make sure the user is properly attached to the request
+      req.user = existingUser;
+
+      // Login the user with session - force a proper session creation
+      req.login(existingUser, { session: true }, (err) => {
         if (err) {
           console.error("Login error:", err);
           return res.redirect(`${process.env.CLIENT_URL}/login`);
         }
         
         console.log(`User successfully logged in: ${existingUser.email}`);
+        
+        // Force the session to be saved explicitly
+        req.session.passport = { user: existingUser._id };
         
         // Set session cookie explicitly to help with persistence
         req.session.save((saveErr) => {

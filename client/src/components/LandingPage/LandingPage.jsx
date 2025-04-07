@@ -1,6 +1,5 @@
-import { Link, useAsyncError } from "react-router-dom";
 import { motion } from "framer-motion";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
@@ -16,7 +15,7 @@ const CheckboxLabel = styled.label`
 
 export default function LandingPage() {
   const [showModal, setShowModal] = useState(false);
-  const [createRoom, setcreateRoom] = useState(false);
+  const [createRoom, setCreateRoom] = useState(false);
   const [joinLink, setJoinLink] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -24,29 +23,9 @@ export default function LandingPage() {
   const [roomName, setRoomName] = useState("");
   const [description, setDescription] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
-  const [isHost, setIsHost] = useState(true);
-  const [shareableLink, setShareableLink] = useState(null);
 
   const API_BASE_URL = import.meta.env.VITE_API_ADDRESS || "http://localhost:5000";
-
-  // useEffect(() => {
-  //   const urlParams = new URLSearchParams(window.location.search);
-  //   const token = urlParams.get('token');
-  //   const googleId = urlParams.get('googleId');
-    
-  //   if (token) {
-  //     localStorage.setItem('token', token);
-  //   }
-  //   if (googleId) {
-  //     localStorage.setItem('googleId', googleId);
-  //   }
-    
-  //   // Clean up URL parameters
-  //   if (googleId) {
-  //     window.history.replaceState({}, document.title, window.location.pathname);
-  //   }
-  // }, []);
-
+//shi se nhi hoga
   const handleCreateRoom = async () => {
     if (!user || !user.googleId) {
       toast.error("You must be logged in to create a room");
@@ -70,35 +49,39 @@ export default function LandingPage() {
           settings: {
             allowChat: true,
             allowMediaControl: true,
-            allowVideoChat: true
-          }
+            allowVideoChat: true,
+          },
         },
         {
-          headers: { Authorization: user.googleId },
+          headers: {
+            Authorization: user.googleId || user._id,
+          },
           withCredentials: true,
         }
       );
 
-      console.log("Room created:", res.data);
+      const { roomId, inviteLink } = res.data;
 
-      const roomId = res.data.roomId;
-      
-      const generatedLink = `${window.location.origin}/join-room?roomId=${roomId}`;
-      setShareableLink(generatedLink);
-      
+      if (!roomId) {
+        throw new Error("Failed to get room ID from response");
+      }
+
       toast.success("🎉 Room Created Successfully!");
 
-      navigate(`/room?roomId=${roomId}`, { 
-        state: { 
+      // Navigate to the room with the shareable link
+      navigate(`/room?roomId=${roomId}`, {
+        state: {
           isHost: true,
-          link: generatedLink
-        } 
+          link: inviteLink,
+        },
       });
-      
-      setcreateRoom(false);
+
+      setCreateRoom(false);
     } catch (error) {
-      console.error("Error creating room:", error);
-      toast.error(error.response?.data?.message || "Failed to create room");
+      console.error("Create room error:", error);
+      const errorMessage =
+        error.response?.data?.message || "Failed to create room";
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -107,15 +90,15 @@ export default function LandingPage() {
   const handleJoinRoom = () => {
     setShowModal(true);
   };
-  
-  const OpenCreateRoom = () => {
-    setcreateRoom(true);
+
+  const openCreateRoom = () => {
+    setCreateRoom(true);
   };
-  
-  const CloseCreateRoom = () => {
-    setcreateRoom(false);
+
+  const closeCreateRoom = () => {
+    setCreateRoom(false);
   };
-  
+
   const handleCloseModal = () => {
     setShowModal(false);
     setJoinLink("");
@@ -123,31 +106,36 @@ export default function LandingPage() {
 
   const handleSubmit = async () => {
     if (!joinLink.trim()) {
-      toast.error("Please enter a room link");
+      toast.error("Please enter a room link or ID");
       return;
     }
-    
+
     setLoading(true);
-    
+
     try {
       let roomId;
-      
-      if (joinLink.includes('?roomId=')) {
-        roomId = new URLSearchParams(joinLink.split('?')[1]).get('roomId');
-      } else if (joinLink.includes('/join-room/')) {
-        const urlParts = joinLink.split('/');
+
+      if (joinLink.includes("?roomId=")) {
+        roomId = new URLSearchParams(joinLink.split("?")[1]).get("roomId");
+      } else if (joinLink.includes("/room/")) {
+        const urlParts = joinLink.split("/");
         roomId = urlParts[urlParts.length - 1];
       } else {
         roomId = joinLink.trim();
       }
-      
+
       if (!roomId) {
         toast.error("Invalid room link format");
         return;
       }
-      
-      navigate(`/room?roomId=${roomId}`);
-      
+
+      navigate(`/room?roomId=${roomId}`, {
+        state: {
+          isHost: false,
+          link: `${window.location.origin}/room?roomId=${roomId}`,
+        },
+      });
+
       handleCloseModal();
     } catch (error) {
       console.error("Error joining room:", error);
@@ -170,7 +158,7 @@ export default function LandingPage() {
 
       <div className="flex flex-col sm:flex-row gap-6">
         <motion.button
-          onClick={OpenCreateRoom}
+          onClick={openCreateRoom}
           whileHover={{ scale: 1.05 }}
           className="px-8 py-4 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg shadow-lg transition-all duration-200 ease-in-out"
         >
@@ -184,6 +172,7 @@ export default function LandingPage() {
           Join a Room
         </motion.button>
       </div>
+
       {createRoom && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 p-6 rounded-xl w-full max-w-md shadow-2xl">
@@ -216,12 +205,14 @@ export default function LandingPage() {
               <motion.button
                 onClick={handleCreateRoom}
                 disabled={loading || !roomName.trim()}
-                className={`px-6 py-2 ${loading ? 'bg-gray-500' : 'bg-red-500 hover:bg-red-600'} text-white font-semibold rounded-lg transition-all duration-200`}
+                className={`px-6 py-2 ${
+                  loading ? "bg-gray-500" : "bg-red-500 hover:bg-red-600"
+                } text-white font-semibold rounded-lg transition-all duration-200`}
               >
                 {loading ? "Creating..." : "Create Room"}
               </motion.button>
               <motion.button
-                onClick={CloseCreateRoom}
+                onClick={closeCreateRoom}
                 disabled={loading}
                 className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg transition-all duration-200"
               >
@@ -231,11 +222,14 @@ export default function LandingPage() {
           </div>
         </div>
       )}
+
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 p-6 rounded-xl w-full max-w-md shadow-2xl">
             <h2 className="text-2xl font-semibold text-white mb-4">Join a Room</h2>
-            <p className="text-gray-300 mb-6">Please paste the room link or ID below</p>
+            <p className="text-gray-300 mb-6">
+              Please paste the room link or ID below
+            </p>
             <input
               type="text"
               placeholder="Paste your room link or ID here..."
@@ -247,7 +241,9 @@ export default function LandingPage() {
               <motion.button
                 onClick={handleSubmit}
                 disabled={loading || !joinLink.trim()}
-                className={`px-6 py-2 ${loading ? 'bg-gray-500' : 'bg-red-500 hover:bg-red-600'} text-white font-semibold rounded-lg transition-all duration-200`}
+                className={`px-6 py-2 ${
+                  loading ? "bg-gray-500" : "bg-red-500 hover:bg-red-600"
+                } text-white font-semibold rounded-lg transition-all duration-200`}
               >
                 {loading ? "Joining..." : "Join"}
               </motion.button>

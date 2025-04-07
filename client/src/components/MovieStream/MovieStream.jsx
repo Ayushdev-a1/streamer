@@ -102,251 +102,288 @@ const MovieStream = () => {
       const socketUrl = API_BASE_URL || 'http://localhost:5000';
       
       console.log(`Connecting to socket server at: ${socketUrl}`);
+      console.log(`User data for socket connection:`, {
+        googleId: user.googleId,
+        username: user.name,
+        userId: user._id
+      });
       
-      socketRef.current = io(socketUrl, {
-        transports: ["websocket", "polling"], // Try websocket first, fallback to polling
-        reconnectionAttempts: 5,
-        reconnectionDelay: 1000,
-        timeout: 10000, // 10 seconds connection timeout
-        auth: { googleId: user.googleId, username: user.name, userId: user._id },
-        withCredentials: true,
-      })
-
-      // Add improved connection logging and error handling
-      socketRef.current.on("connect", () => {
-        console.log("Connected to WebSocket server successfully");
-        setConnectionStatus("Connected to server")
-        socketRef.current.emit("join-room", room, hostFromState)
-
-        if (hostFromState) {
-          // Send host state updates at regular intervals
-          const hostStateInterval = setInterval(() => {
-            if (videoRef.current && socketRef.current.connected) {
-              socketRef.current.emit("host-state", {
-                roomId: room,
-                time: videoRef.current.currentTime,
-                playing: !videoRef.current.paused,
-              })
-            }
-          }, 500)
-
-          // Clean up interval on component unmount
-          return () => clearInterval(hostStateInterval)
-        }
-      })
-
-      socketRef.current.on("connect_error", (err) => {
-        console.error("Socket connection error:", err.message, err);
-        setConnectionStatus(`Connection error: ${err.message}`);
-        toast.error(`Connection error: ${err.message}`);
-        setIsLoading(false);
-      })
-
-      socketRef.current.on("reconnect", (attempt) => {
-        console.log(`Reconnected after ${attempt} attempts`)
-        setConnectionStatus("Reconnected")
-        if (room) socketRef.current.emit("join-room", room, hostFromState)
-      })
-
-      socketRef.current.on("user-count", (count) => setUserCount(count))
-
-      socketRef.current.on("user-joined", (userId) => {
-        console.log("User joined:", userId)
-        setUsers((prev) => [...new Set([...prev, userId])])
-
-        // Delay initiating call to ensure both sides are ready
-        setTimeout(() => {
-          if (localStream) {
-            console.log("Initiating call with new user:", userId)
-            createPeerConnection(userId, true)
+      try {
+        socketRef.current = io(socketUrl, {
+          path: '/socket.io/',
+          transports: ["websocket", "polling"], // Try websocket first, fallback to polling
+          reconnectionAttempts: 5,
+          reconnectionDelay: 1000,
+          timeout: 10000, // 10 seconds connection timeout
+          auth: { googleId: user.googleId, username: user.name, userId: user._id },
+          withCredentials: true,
+          forceNew: true,
+          extraHeaders: {
+            "Origin": window.location.origin
           }
-        }, 1000)
-      })
+        });
 
-      socketRef.current.on("user-left", (userId) => {
-        console.log("User left:", userId)
-        setUsers((prev) => prev.filter((id) => id !== userId))
+        // Add connection event handlers
+        socketRef.current.on("connect", () => {
+          console.log("Connected to WebSocket server successfully");
+          setConnectionStatus("Connected to server");
+          
+          // Add a small delay before joining the room to ensure connection is stable
+          setTimeout(() => {
+            console.log(`Joining room ${room} after connection`);
+            socketRef.current.emit("join-room", room, hostFromState);
+            
+            if (hostFromState) {
+              // Send host state updates at regular intervals
+              const hostStateInterval = setInterval(() => {
+                if (videoRef.current && socketRef.current && socketRef.current.connected) {
+                  socketRef.current.emit("host-state", {
+                    roomId: room,
+                    time: videoRef.current.currentTime,
+                    playing: !videoRef.current.paused,
+                  });
+                }
+              }, 500);
 
-        // Close peer connection
-        if (peerConnectionsRef.current[userId]) {
-          peerConnectionsRef.current[userId].close()
-          delete peerConnectionsRef.current[userId]
-        }
+              // Clean up interval on component unmount
+              return () => clearInterval(hostStateInterval);
+            }
+          }, 1000);
+        });
 
-        // Remove remote stream
-        setRemoteStreams((prev) => {
-          const newStreams = { ...prev }
-          delete newStreams[userId]
-          return newStreams
+        socketRef.current.on("connect_error", (err) => {
+          console.error("Socket connection error:", err.message, err);
+          setConnectionStatus(`Connection error: ${err.message}`);
+          toast.error(`Connection error: ${err.message}`);
+          setIsLoading(false);
+          
+          // Try to connect using polling if websocket failed
+          console.log("Attempting fallback connection with polling transport");
+          socketRef.current = io(socketUrl, {
+            path: '/socket.io/',
+            transports: ["polling"],
+            reconnectionAttempts: 5,
+            reconnectionDelay: 1000,
+            timeout: 10000,
+            auth: { googleId: user.googleId, username: user.name, userId: user._id },
+            withCredentials: true,
+            forceNew: true,
+            extraHeaders: {
+              "Origin": window.location.origin
+            }
+          });
+        });
+
+        socketRef.current.on("reconnect", (attempt) => {
+          console.log(`Reconnected after ${attempt} attempts`);
+          setConnectionStatus("Reconnected");
+          if (room) socketRef.current.emit("join-room", room, hostFromState);
+        });
+
+        socketRef.current.on("user-count", (count) => setUserCount(count))
+
+        socketRef.current.on("user-joined", (userId) => {
+          console.log("User joined:", userId)
+          setUsers((prev) => [...new Set([...prev, userId])])
+
+          // Delay initiating call to ensure both sides are ready
+          setTimeout(() => {
+            if (localStream) {
+              console.log("Initiating call with new user:", userId)
+              createPeerConnection(userId, true)
+            }
+          }, 1000)
         })
-      })
 
-      socketRef.current.on("video-source", (source) => {
-        const fullSource = `${API_BASE_URL}${source}`
-        console.log("Received new video source:", fullSource)
-        setVideoSource(fullSource)
-        setIsLoading(true)
-        loadAndPlayVideo(fullSource)
-      })
+        socketRef.current.on("user-left", (userId) => {
+          console.log("User left:", userId)
+          setUsers((prev) => prev.filter((id) => id !== userId))
 
-      socketRef.current.on("live-state", (state) => {
-        if (isLive && !isHost && videoRef.current) {
-          console.log("Syncing to host state:", state)
-
-          // Only update time if difference is significant (more than 2 seconds)
-          const timeDiff = Math.abs(videoRef.current.currentTime - state.time)
-          if (timeDiff > 2) {
-            videoRef.current.currentTime = state.time
+          // Close peer connection
+          if (peerConnectionsRef.current[userId]) {
+            peerConnectionsRef.current[userId].close()
+            delete peerConnectionsRef.current[userId]
           }
 
-          if (state.playing && videoRef.current.paused) {
-            videoRef.current.play().catch((err) => console.error("Live state playback failed:", err))
-          } else if (!state.playing && !videoRef.current.paused) {
-            videoRef.current.pause()
-          }
-        }
-      })
-
-      socketRef.current.on("pause-all-streams", (time) => {
-        if (videoRef.current) {
-          videoRef.current.currentTime = time
-          videoRef.current.pause()
-          setIsLive(true)
-        }
-      })
-
-      socketRef.current.on("chat-message", (data) => {
-        setMessages((prev) => [...prev, data])
-      })
-
-      socketRef.current.on("error", ({ message }) => {
-        console.error("Socket error:", message)
-        toast.error(message)
-      })
-
-      socketRef.current.on("existing-users", (users) => {
-        console.log("Existing users:", users)
-        setUsers(users.map((user) => user.socketId))
-
-        // Delay initiating calls to ensure both sides are ready
-        setTimeout(() => {
-          users.forEach((user) => {
-            if (user.socketId !== socketRef.current.id) {
-              console.log("Creating peer connection with existing user:", user.socketId)
-              createPeerConnection(user.socketId, true)
-            }
+          // Remove remote stream
+          setRemoteStreams((prev) => {
+            const newStreams = { ...prev }
+            delete newStreams[userId]
+            return newStreams
           })
-        }, 1000)
-      })
+        })
 
-      socketRef.current.on("offer", async (data) => {
-        try {
-          const { offer, from } = data
-          console.log("Received offer from:", from)
+        socketRef.current.on("video-source", (source) => {
+          const fullSource = `${API_BASE_URL}${source}`
+          console.log("Received new video source:", fullSource)
+          setVideoSource(fullSource)
+          setIsLoading(true)
+          loadAndPlayVideo(fullSource)
+        })
 
-          // Create peer connection if it doesn't exist
-          const pc = createPeerConnection(from, false)
+        socketRef.current.on("live-state", (state) => {
+          if (isLive && !isHost && videoRef.current) {
+            console.log("Syncing to host state:", state)
 
-          // Set remote description (the offer)
-          await pc.setRemoteDescription(new RTCSessionDescription(offer))
-          console.log("Set remote description (offer) successfully")
+            // Only update time if difference is significant (more than 2 seconds)
+            const timeDiff = Math.abs(videoRef.current.currentTime - state.time)
+            if (timeDiff > 2) {
+              videoRef.current.currentTime = state.time
+            }
 
-          // Create answer
-          const answer = await pc.createAnswer()
-          console.log("Created answer")
-
-          // Set local description (the answer)
-          await pc.setLocalDescription(answer)
-          console.log("Set local description (answer) successfully")
-
-          // Send the answer back
-          socketRef.current.emit("answer", { answer, target: from })
-          console.log("Sent answer to:", from)
-
-          // Log connection state
-          logPeerConnectionState(from, pc)
-        } catch (error) {
-          console.error("Error handling offer:", error)
-        }
-      })
-
-      socketRef.current.on("answer", async (data) => {
-        try {
-          const { answer, from } = data
-          console.log("Received answer from:", from)
-
-          const pc = peerConnectionsRef.current[from]
-          if (pc) {
-            // Set remote description (the answer)
-            await pc.setRemoteDescription(new RTCSessionDescription(answer))
-            console.log("Set remote description (answer) successfully")
-
-            // Log connection state
-            logPeerConnectionState(from, pc)
-          } else {
-            console.warn("Received answer but no peer connection exists for:", from)
-          }
-        } catch (error) {
-          console.error("Error handling answer:", error)
-        }
-      })
-
-      socketRef.current.on("ice-candidate", async (data) => {
-        try {
-          const { candidate, from } = data
-          console.log("Received ICE candidate from:", from)
-
-          const pc = peerConnectionsRef.current[from]
-          if (pc && candidate) {
-            // Add the ICE candidate
-            await pc.addIceCandidate(new RTCIceCandidate(candidate))
-            console.log("Added ICE candidate successfully")
-
-            // Log connection state
-            logPeerConnectionState(from, pc)
-          } else {
-            console.warn("Received ICE candidate but no peer connection exists for:", from)
-          }
-        } catch (error) {
-          console.error("Error handling ICE candidate:", error)
-        }
-      })
-
-      socketRef.current.on("media-status", (data) => {
-        const { userId, cameraOn, micOn } = data
-        console.log("Media status update:", { userId, cameraOn, micOn })
-
-        setRemoteStreams((prev) => {
-          const newStreams = { ...prev }
-          if (newStreams[userId]) {
-            newStreams[userId] = {
-              ...newStreams[userId],
-              cameraOn,
-              micOn,
+            if (state.playing && videoRef.current.paused) {
+              videoRef.current.play().catch((err) => console.error("Live state playback failed:", err))
+            } else if (!state.playing && !videoRef.current.paused) {
+              videoRef.current.pause()
             }
           }
-          return newStreams
         })
-      })
 
-      // Initial video load
-      loadAndPlayVideo(videoSource)
+        socketRef.current.on("pause-all-streams", (time) => {
+          if (videoRef.current) {
+            videoRef.current.currentTime = time
+            videoRef.current.pause()
+            setIsLive(true)
+          }
+        })
 
-      return () => {
-        if (socketRef.current) {
-          socketRef.current.emit("leaveRoom", { roomId: room })
-          socketRef.current.disconnect()
-          socketRef.current = null
+        socketRef.current.on("chat-message", (data) => {
+          setMessages((prev) => [...prev, data])
+        })
+
+        socketRef.current.on("error", ({ message }) => {
+          console.error("Socket error:", message)
+          toast.error(message)
+        })
+
+        socketRef.current.on("existing-users", (users) => {
+          console.log("Existing users:", users)
+          setUsers(users.map((user) => user.socketId))
+
+          // Delay initiating calls to ensure both sides are ready
+          setTimeout(() => {
+            users.forEach((user) => {
+              if (user.socketId !== socketRef.current.id) {
+                console.log("Creating peer connection with existing user:", user.socketId)
+                createPeerConnection(user.socketId, true)
+              }
+            })
+          }, 1000)
+        })
+
+        socketRef.current.on("offer", async (data) => {
+          try {
+            const { offer, from } = data
+            console.log("Received offer from:", from)
+
+            // Create peer connection if it doesn't exist
+            const pc = createPeerConnection(from, false)
+
+            // Set remote description (the offer)
+            await pc.setRemoteDescription(new RTCSessionDescription(offer))
+            console.log("Set remote description (offer) successfully")
+
+            // Create answer
+            const answer = await pc.createAnswer()
+            console.log("Created answer")
+
+            // Set local description (the answer)
+            await pc.setLocalDescription(answer)
+            console.log("Set local description (answer) successfully")
+
+            // Send the answer back
+            socketRef.current.emit("answer", { answer, target: from })
+            console.log("Sent answer to:", from)
+
+            // Log connection state
+            logPeerConnectionState(from, pc)
+          } catch (error) {
+            console.error("Error handling offer:", error)
+          }
+        })
+
+        socketRef.current.on("answer", async (data) => {
+          try {
+            const { answer, from } = data
+            console.log("Received answer from:", from)
+
+            const pc = peerConnectionsRef.current[from]
+            if (pc) {
+              // Set remote description (the answer)
+              await pc.setRemoteDescription(new RTCSessionDescription(answer))
+              console.log("Set remote description (answer) successfully")
+
+              // Log connection state
+              logPeerConnectionState(from, pc)
+            } else {
+              console.warn("Received answer but no peer connection exists for:", from)
+            }
+          } catch (error) {
+            console.error("Error handling answer:", error)
+          }
+        })
+
+        socketRef.current.on("ice-candidate", async (data) => {
+          try {
+            const { candidate, from } = data
+            console.log("Received ICE candidate from:", from)
+
+            const pc = peerConnectionsRef.current[from]
+            if (pc && candidate) {
+              // Add the ICE candidate
+              await pc.addIceCandidate(new RTCIceCandidate(candidate))
+              console.log("Added ICE candidate successfully")
+
+              // Log connection state
+              logPeerConnectionState(from, pc)
+            } else {
+              console.warn("Received ICE candidate but no peer connection exists for:", from)
+            }
+          } catch (error) {
+            console.error("Error handling ICE candidate:", error)
+          }
+        })
+
+        socketRef.current.on("media-status", (data) => {
+          const { userId, cameraOn, micOn } = data
+          console.log("Media status update:", { userId, cameraOn, micOn })
+
+          setRemoteStreams((prev) => {
+            const newStreams = { ...prev }
+            if (newStreams[userId]) {
+              newStreams[userId] = {
+                ...newStreams[userId],
+                cameraOn,
+                micOn,
+              }
+            }
+            return newStreams
+          })
+        })
+
+        // Initial video load
+        loadAndPlayVideo(videoSource)
+
+        return () => {
+          if (socketRef.current) {
+            socketRef.current.emit("leaveRoom", { roomId: room })
+            socketRef.current.disconnect()
+            socketRef.current = null
+          }
+
+          // Close all peer connections
+          Object.values(peerConnectionsRef.current).forEach((pc) => pc.close())
+          peerConnectionsRef.current = {}
+
+          // Stop all local media tracks
+          if (localStream) {
+            localStream.getTracks().forEach((track) => track.stop())
+          }
         }
-
-        // Close all peer connections
-        Object.values(peerConnectionsRef.current).forEach((pc) => pc.close())
-        peerConnectionsRef.current = {}
-
-        // Stop all local media tracks
-        if (localStream) {
-          localStream.getTracks().forEach((track) => track.stop())
-        }
+      } catch (error) {
+        console.error("Error initializing socket:", error);
+        setConnectionStatus(`Socket initialization error: ${error.message}`);
+        toast.error(`Socket initialization error: ${error.message}`);
       }
     }
   }, [user, location])
